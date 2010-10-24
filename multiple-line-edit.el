@@ -107,6 +107,10 @@
 
 ;;; Chane Log:
 
+;;   - Fixed a fatal error:
+;;     "Symbol's value as variable is void: remove-text-properties-p"
+;;     This bug was brought by failure of merge operation.
+;;
 ;;   - Made `mulled/experimental/install-yas-support' not to run
 ;;     automatically.
 ;;
@@ -534,7 +538,11 @@
               (mulled/lines/mirror-replace-op lines edit-trailing-edges-p beg end len-removed))
              ;; Deletion
              (t
-              (let (;; May be "C-d" at end of line.
+              (let (;; Removing text properties.
+                    (remove-text-properties-p
+                     (not (= beg end)))
+                    
+                    ;; May be "C-d" at end of line.
                     (remove-newline-at-eol-p
                      (= end (mulled/ov-1st-line/get-end-with-padding ov)))
                     
