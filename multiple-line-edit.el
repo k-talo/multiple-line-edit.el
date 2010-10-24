@@ -107,6 +107,7 @@
 
 ;;; Chane Log:
 
+;;  v1.4, Sun Oct 24 22:44:13 2010 JST
 ;;   - Fixed a fatal error:
 ;;     "Symbol's value as variable is void: remove-text-properties-p"
 ;;     This bug was brought by failure of merge operation.
@@ -128,7 +129,7 @@
 
 (provide 'multiple-line-edit)
 
-(defconst multiple-line-edit/version "1.3")
+(defconst multiple-line-edit/version "1.4")
 
 (eval-when-compile
   (require 'cl)
