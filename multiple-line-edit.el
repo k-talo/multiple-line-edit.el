@@ -107,6 +107,8 @@
 
 ;;; Chane Log:
 
+;;   - Fixed bugs regarding to reactivation by undo command.
+;;
 ;;  v1.4, Sun Oct 24 22:44:13 2010 JST
 ;;   - Fixed a fatal error:
 ;;     "Symbol's value as variable is void: remove-text-properties-p"
@@ -333,19 +335,22 @@
 ;; Constructor.
 ;;
 (defun mulled/ov-1st-line/activate (r-beg r-end edit-trailing-edges-p)
-  (let ((ov (mulled/ov-1st-line/find-at r-beg)))
-    (when ov
-      ;; May be rubbish.
-      (mulled/ov-1st-line/dispose ov)))
+  (mulled/ov-1st-line/activate-aux (mulled/lines/new r-beg r-end edit-trailing-edges-p)
+                                   edit-trailing-edges-p))
+  
+(defun mulled/ov-1st-line/reactivate (be-pair-lst edit-trailing-edges-p)
+  (mulled/ov-1st-line/activate-aux (mulled/lines/new-by-be-pair-lst be-pair-lst
+                                                                    edit-trailing-edges-p)
+                                   edit-trailing-edges-p))
 
+(defun mulled/ov-1st-line/activate-aux (lines edit-trailing-edges-p)
   ;; To detect operations listed below, we put overlay
   ;; with extra padding around the line.
   ;;
   ;;   1. `delete-backward-char' at leading edge of the line.
   ;;   2. `delete-char' at trailing edge of the line.
   ;;
-  (let* ((lines (mulled/lines/new r-beg r-end edit-trailing-edges-p))
-         (beg (mulled/lines/nth-beg lines 0))
+  (let* ((beg (mulled/lines/nth-beg lines 0))
          (end (mulled/lines/nth-end lines 0))
          (beg-from-point-min-p (= beg (point-min)))
          (ov (make-overlay (if beg-from-point-min-p
@@ -356,6 +361,11 @@
                            nil
                            nil))
          (cur-pt (point))) ;; Remember current point for undo.
+
+    (let ((ov (mulled/ov-1st-line/find-at beg)))
+      (when ov
+        ;; May be rubbish.
+        (mulled/ov-1st-line/dispose ov)))
 
     ;; Set attributes.
     (overlay-put ov 'mulled/ov-1st-line-p t)
@@ -412,13 +422,13 @@
     
     (when (and mulled/reactivate-by-undo
                (listp buffer-undo-list))
-      (push `(apply mulled/ov-1st-line/find-and-dispose-at ,r-beg) buffer-undo-list)
+      (push (mulled/ov-1st-line/make-dispose-form ov) buffer-undo-list)
       (push `(apply goto-char ,cur-pt) buffer-undo-list))
     
 
     ;; Move cursor to 1st line.
     ;;
-    (goto-char r-beg)
+    (goto-char beg)
     (if edit-trailing-edges-p
         (end-of-line)
       (beginning-of-line))
@@ -438,13 +448,7 @@
          (lines (overlay-get ov 'mulled/lines)))
     (when (and mulled/reactivate-by-undo
                (listp buffer-undo-list))
-      (push `(apply mulled/ov-1st-line/activate
-                    ,(mulled/lines/nth-beg lines 0)
-                    ,(min (+ (mulled/lines/nth-end lines (1- line-num))
-                             1) ;; Include new-line char for empty line.
-                          (point-max))
-                    ,edit-trailing-edges-p)
-            buffer-undo-list))
+      (push (mulled/ov-1st-line/make-reactivate-form ov) buffer-undo-list))
 
     (mulled/lines/dispose lines)
 
@@ -471,6 +475,18 @@
 
 ;; Instance Methods.
 ;;
+(defun mulled/ov-1st-line/make-reactivate-form (ov)
+  `(apply mulled/ov-1st-line/reactivate
+          ;; Do not save marker to buffer-undo-list
+          ;; not to make emacs slow.
+          ,(mulled/lines/be-pair-lst/dup-without-marker
+            (mulled/lines/be-pair-lst-of (overlay-get ov 'mulled/lines)))
+          ,(overlay-get ov 'mulled/edit-trailing-edges-p)))
+
+(defun mulled/ov-1st-line/make-dispose-form (ov)
+`(apply mulled/ov-1st-line/find-and-dispose-at
+        ,(mulled/ov-1st-line/get-beg-without-padding ov)))
+
 (defun mulled/ov-1st-line/switch-direction (ov)
   (let* ((lines (overlay-get ov 'mulled/lines))
          (beg (mulled/lines/nth-beg lines 0))
@@ -585,32 +601,14 @@
 ;; Constructor.
 ;;
 (defun mulled/lines/new (r-beg r-end edit-trailing-edges-p)
-  (let* ((be-pair-list
-          (mulled/lines/init-be-pair-lst r-beg r-end))
-         (fringe-ov-lst
-          (mulled/lines/init-fringe-ov-lst (list be-pair-list)
-                                           edit-trailing-edges-p)))
-    (list be-pair-list fringe-ov-lst)))
+  (mulled/lines/new-by-be-pair-lst (mulled/lines/be-pair-lst/new r-beg r-end)
+                                   edit-trailing-edges-p))
 
-;; Initialize beginning-of-line/end-of-line pairs for each lines.
-;;
-(defun mulled/lines/init-be-pair-lst (r-beg r-end)
-  (let (be-pair-list)
-    (save-excursion
-      (goto-char r-beg)
-      (dotimes (i (count-lines r-beg r-end))
-        (push (cons (prog2 (beginning-of-line)
-                        (let ((m (point-marker)))
-                          (set-marker-insertion-type m nil)
-                          m))
-                    (progn (end-of-line)
-                           (let ((m (point-marker)))
-                             (set-marker-insertion-type m t)
-                             m)))
-              be-pair-list)
-        (when (not (= (point-max) (point)))
-          (forward-char))))
-    (reverse be-pair-list)))
+(defun mulled/lines/new-by-be-pair-lst (be-pair-lst edit-trailing-edges-p)
+  (mulled/lines/be-pair-lst/activate-marker be-pair-lst)
+  (let* ((fringe-ov-lst (mulled/lines/init-fringe-ov-lst (list be-pair-lst)
+                                                         edit-trailing-edges-p)))
+    (list be-pair-lst fringe-ov-lst)))
 
 ;; Initialize indicator icons on fringe of each line.
 ;;
@@ -656,10 +654,7 @@
   ;; Dispose icons on fringe.
   (dolist (ov (mulled/lines/indicator-ov-lst-of lines))
     (delete-overlay ov))
-  ;; Not to make emacs slow, we should discard markers immediately.
-  (dolist (be-pair (mulled/lines/be-pair-lst-of lines))
-    (set-marker (car be-pair) nil)
-    (set-marker (cdr be-pair) nil)))
+  (mulled/lines/be-pair-lst/dispose (mulled/lines/be-pair-lst-of lines)))
 
 (defun mulled/lines/be-pair-lst-of (lines)
   "Fetch list of `beginning-of-line/end-of-line' pairs of each lines."
@@ -777,6 +772,53 @@ accepted by each line of multiple line edit."
                                         (delete-region beg end)
                                         (goto-char beg)
                                         (insert str)))))))))
+
+
+;;; ===========================================================================
+;;;
+;;;  beginning-of-line/end-of-line pairs for each lines.
+;;;
+;;; ===========================================================================
+
+(defun mulled/lines/be-pair-lst/new (r-beg r-end)
+  (let (be-pair-lst)
+    (save-excursion
+      (goto-char r-beg)
+      (dotimes (i (count-lines r-beg r-end))
+        (push (cons (progn (beginning-of-line)
+                           (point))
+                    (progn (end-of-line)
+                           (point)))
+              be-pair-lst)
+        (when (not (= (point-max) (point)))
+          (forward-char))))
+    (mulled/lines/be-pair-lst/activate-marker (reverse be-pair-lst))))
+
+(defun mulled/lines/be-pair-lst/activate-marker (be-pair-lst)
+  (save-excursion
+    (dolist (be-pair be-pair-lst)
+      (goto-char (car be-pair))
+      (setcar be-pair (let ((m (point-marker)))
+                        (set-marker-insertion-type m nil)
+                        m))
+      (goto-char (cdr be-pair))
+      (setcdr be-pair (let ((m (point-marker)))
+                        (set-marker-insertion-type m t)
+                        m))))
+  be-pair-lst)
+
+(defun mulled/lines/be-pair-lst/dispose (be-pair-lst)
+  ;; Not to make emacs slow, we should discard markers immediately.
+  (dolist (be-pair be-pair-lst)
+    (and (markerp (car be-pair)) (set-marker (car be-pair) nil))
+    (and (markerp (cdr be-pair)) (set-marker (cdr be-pair) nil))))
+
+(defun mulled/lines/be-pair-lst/dup-without-marker (be-pair-lst)
+  ;; Copy be-pair-list, with replacing markers with numbers.
+  (mapcar (lambda (pair)
+            (cons (marker-position (car pair))
+                  (marker-position (cdr pair))))
+          be-pair-lst))
 
 
 ;;; ===========================================================================
