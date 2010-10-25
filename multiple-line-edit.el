@@ -107,6 +107,7 @@
 
 ;;; Change Log:
 
+;;  v1.5, Mon Oct 25 11:45:06 2010 JST
 ;;   - Fixed bugs regarding to reactivation by undo command.
 ;;     This bug was caused when line breaks ware inserted in
 ;;     multiple line edit session.
@@ -133,7 +134,7 @@
 
 (provide 'multiple-line-edit)
 
-(defconst multiple-line-edit/version "1.4")
+(defconst multiple-line-edit/version "1.5")
 
 (eval-when-compile
   (require 'cl)
