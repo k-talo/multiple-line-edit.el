@@ -105,7 +105,7 @@
 ;;
 
 
-;;; Chane Log:
+;;; Change Log:
 
 ;;   - Fixed bugs regarding to reactivation by undo command.
 ;;
@@ -837,7 +837,7 @@ accepted by each line of multiple line edit."
 (defun mulled/experimental/install-yas-support-aux ()
   (remove-hook 'yas/minor-mode-hook 'mulled/experimental/install-yas-support-aux)
   
-  ;; When snipets are expanded in 1st line, mirror them to another lines.
+  ;; When snippets are expanded in 1st line, mirror them to another lines.
   ;;
   (defadvice yas/expand-snippet (after mulled/yas-hook-fn (template &optional start end expand-env))
     (let ((ov (mulled/ov-1st-line/find-at (point))))
@@ -864,7 +864,7 @@ accepted by each line of multiple line edit."
   (ad-activate 'yas/expand-snippet)
   
 
-  ;; When snipets are expanded in 1st line, mirror them to another lines.
+  ;; When snippets are expanded in 1st line, mirror them to another lines.
   ;;
   (defadvice yas/skip-and-clear (around mulled/yas/skip-and-clear-hook-fn (field))
     (lexical-let ((ov (mulled/ov-1st-line/find-at (point)))
