@@ -573,8 +573,7 @@
                     (progn
                       (mulled/ov-1st-line/dispose ov)
                       (message "[mulled] Multiple line edit exited. (out of range)"))
-                  (when (not remove-text-properties-p)
-                    (mulled/lines/mirror-delete-op lines edit-trailing-edges-p beg end len-removed))))))))))))
+                  (mulled/lines/mirror-delete-op lines edit-trailing-edges-p beg end len-removed)))))))))))
 
 ;; To prevent duplication of edit, in the lines next to 1st line,
 ;; which caused by undo/redo operation, we have to aware if the hook
