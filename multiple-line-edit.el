@@ -108,6 +108,8 @@
 ;;; Change Log:
 
 ;;   - Fixed bugs regarding to reactivation by undo command.
+;;     This bug was caused when line breaks ware inserted in
+;;     multiple line edit session.
 ;;
 ;;  v1.4, Sun Oct 24 22:44:13 2010 JST
 ;;   - Fixed a fatal error:
