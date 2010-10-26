@@ -107,6 +107,12 @@
 
 ;;; Change Log:
 
+;;  v1.6, Wed Oct 27 02:58:04 2010 JST
+;;   - Experimental user option `mulled/apply-special-fn-to-each-line-p'.
+;;     When this value is non-nil, special function defined in
+;;     `mulled/special-fn-alist' will be applied to each line
+;;     instead of mirroring the result of a function applied at 1st line.
+;;
 ;;  v1.5, Mon Oct 25 11:45:06 2010 JST
 ;;   - Fixed bugs regarding to reactivation by undo command.
 ;;     This bug was caused when line breaks ware inserted in
@@ -134,7 +140,7 @@
 
 (provide 'multiple-line-edit)
 
-(defconst multiple-line-edit/version "1.5")
+(defconst multiple-line-edit/version "1.6")
 
 (eval-when-compile
   (require 'cl)
