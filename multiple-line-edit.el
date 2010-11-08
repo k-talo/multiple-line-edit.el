@@ -524,11 +524,12 @@ a function applied at 1st line.
 
 (defun mulled/ov-1st-line/switch-direction (ov)
   (let* ((lines (overlay-get ov 'mulled/lines))
-         (beg (mulled/lines/nth-beg lines 0))
-         (end (mulled/lines/nth-end lines (1- (mulled/lines/count-of lines))))
+         (be-pair-lst-wo-marker (mulled/lines/be-pair-lst/dup-without-marker
+                                 (mulled/lines/be-pair-lst-of lines)))
          (edit-trailing-edges-p (overlay-get ov 'mulled/edit-trailing-edges-p)))
     (mulled/ov-1st-line/dispose ov)
-    (mulled/ov-1st-line/activate beg end (not edit-trailing-edges-p))))
+    (mulled/ov-1st-line/reactivate be-pair-lst-wo-marker
+                                   (not edit-trailing-edges-p))))
 
 (defun mulled/ov-1st-line/get-beg-without-padding (ov)
   (+ (overlay-start ov)
