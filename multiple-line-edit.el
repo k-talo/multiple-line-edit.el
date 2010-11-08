@@ -335,6 +335,57 @@ a function applied at 1st line.
     (and ov
          (not (mulled/ov-1st-line/edit-trailing-edges-p ov)))))
 
+;; Point and Column transrations.
+;; NOTE: Point counts number of characters.
+;;       Column counts visual width of characters.
+
+(defun mulled/pt-offset-by-col-num (pt-beg col-num)
+  "Calculate point offset from PT-BEG by COL-NUM.
+
+Line break character will be counted as one column."
+  (let ((done nil))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (narrow-to-region pt-beg (point-max))
+        (goto-char (point-min))
+        
+        (while (and (not (eobp))
+                    (not done))
+          (end-of-line)
+          (let ((cur-col (current-column)))
+            (if (<= col-num cur-col)
+                (progn
+                  (move-to-column col-num)
+                  (setq done t))
+              ;; Count line break as 1 column.
+              (progn
+                (goto-char (1+ (point)))
+                (setq col-num (- col-num cur-col 1))))))
+        (widen)
+        (point)))))
+
+(defun mulled/col-num-in-region (pt-beg pt-end)
+  "Calculate number of columns, based on visible char width,
+in the region specified by PT-BEG and PT-END.
+
+Line break character will be counted as one column."
+  (let ((col-num 0))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (narrow-to-region pt-beg pt-end)
+        (goto-char (point-min))
+
+        (while (not (= (point) (point-max)))
+          (setq col-num (+ col-num
+                           (progn (end-of-line)
+                                  (current-column))))
+          ;; Count line break as 1 column.
+          (when (not (= (point) (point-max)))
+            (goto-char (1+ (point)))
+            (setq col-num (1+ col-num))))))
+    col-num))
 
 
 ;;; ===========================================================================
@@ -369,8 +420,8 @@ a function applied at 1st line.
 
 ;; Constructor.
 ;;
-(defun mulled/ov-1st-line/activate (r-beg r-end edit-trailing-edges-p)
-  (mulled/ov-1st-line/activate-aux (mulled/lines/new r-beg r-end edit-trailing-edges-p)
+(defun mulled/ov-1st-line/activate (r-pt-beg r-pt-end edit-trailing-edges-p)
+  (mulled/ov-1st-line/activate-aux (mulled/lines/new r-pt-beg r-pt-end edit-trailing-edges-p)
                                    edit-trailing-edges-p))
   
 (defun mulled/ov-1st-line/reactivate (be-pair-lst edit-trailing-edges-p)
@@ -385,8 +436,8 @@ a function applied at 1st line.
   ;;   1. `delete-backward-char' at leading edge of the line.
   ;;   2. `delete-char' at trailing edge of the line.
   ;;
-  (let* ((beg (mulled/lines/nth-beg lines 0))
-         (end (mulled/lines/nth-end lines 0))
+  (let* ((beg (mulled/lines/pt-nth-beg lines 0))
+         (end (mulled/lines/pt-nth-end lines 0))
          (beg-from-point-min-p (= beg (point-min)))
          (ov (make-overlay (if beg-from-point-min-p
                                beg
@@ -552,6 +603,8 @@ a function applied at 1st line.
 ;;  Modification Hooks for a overlay on the 1st line.
 ;;
 
+(defvar mulled/ov-1st-line/.str-to-be-modified nil)
+
 ;; The hook defined below will be called when modifications is
 ;; occur on the overlay placed over the 1st line of multiple edit.
 (defun mulled/ov-1st-line/mod-hook-fn (&rest args)
@@ -565,67 +618,95 @@ a function applied at 1st line.
 
          (ov             (nth 0 args))
          (after-p        (nth 1 args))
-         (beg            (nth 2 args))
-         (end            (nth 3 args))
+         (pt-beg         (nth 2 args))
+         (pt-end         (nth 3 args))
          (len-removed    (nth 4 args)) ;; Not set in before modification.
-         (lines       (overlay-get ov 'mulled/lines ))
          (edit-trailing-edges-p (overlay-get ov 'mulled/edit-trailing-edges-p)))
     (when (mulled/ov-1st-line/ov-1st-line-p ov) ;; Overlay is not disposed.
-      (if (not after-p)
-          ;; Before modification.
-          (when (not mulled/.running-primitive-undo-p)
-            (when (or (mulled/lines/out-of-1st-line-p lines beg)
-                      (mulled/lines/out-of-1st-line-p lines end))
-              (mulled/ov-1st-line/dispose ov)
-              (message "[mulled] Multiple line edit exited. (out of range)")))
-        ;; After modification.
-        (if mulled/.running-primitive-undo-p
-            (setq mulled/.undo-at (point))
-          (let* ((out-of-range-p (mulled/lines/out-of-range-op-p lines
-                                                                 edit-trailing-edges-p
-                                                                 beg
-                                                                 end
-                                                                 len-removed)))
-            (cond
-             ;; Special function
-             ((and mulled/apply-special-fn-to-each-line-p
-                   fn-callback-pair)
-              (mulled/lines/mirror-special-fn lines
-                                              edit-trailing-edges-p
-                                              beg
-                                              end
-                                              len-removed
-                                              fn-name
-                                              (cdr fn-callback-pair)
-                                              orig-fn-args))
-             ;; Insertion
-             ((zerop len-removed)
-              (if out-of-range-p
-                  (progn
-                    (mulled/ov-1st-line/dispose ov)
-                    (message "[mulled] Multiple line edit exited. (out of range)"))
-                (mulled/lines/mirror-insert-op lines edit-trailing-edges-p beg end)))
-             ;; Replacement
-             ((not (= beg end))
-              (mulled/lines/mirror-replace-op lines edit-trailing-edges-p beg end len-removed))
-             ;; Deletion
-             (t
-              (let (;; May be "C-d" at end of line.
-                    (remove-newline-at-eol-p
-                     (= end (mulled/ov-1st-line/get-end-with-padding ov)))
-                    
-                    ;; May be backspace at beginning of line.
-                    (backspace-at-bol-p
-                     (= end (mulled/ov-1st-line/get-beg-with-padding ov))))
-                
-                (if (or out-of-range-p
-                        remove-newline-at-eol-p
-                        (and backspace-at-bol-p
-                             (not (overlay-get ov 'mulled/beg-from-point-min-p)))) ;;XXX Should be removed?
+      (let* ((lines   (overlay-get ov 'mulled/lines ))
+             (col-beg (mulled/lines/col-from-pt-in-nth lines 0 pt-beg))
+             (col-end (mulled/lines/col-from-pt-in-nth lines 0 pt-end)))
+        
+        (if (not after-p)
+            ;; Before modification.
+            ;;
+            (progn
+              ;; Remember the string to be modified
+              ;; current operation.
+              (setq mulled/ov-1st-line/.str-to-be-modified
+                    (buffer-substring pt-beg pt-end))
+
+              (when (not mulled/.running-primitive-undo-p)
+                (when (or (mulled/lines/out-of-1st-line-p lines pt-beg)
+                          (mulled/lines/out-of-1st-line-p lines pt-end))
+                  (mulled/ov-1st-line/dispose ov)
+                  (message "[mulled] Multiple line edit exited. (out of range)"))))
+
+          ;; After modification.
+          ;;
+          (if mulled/.running-primitive-undo-p
+              (setq mulled/.undo-at (point))
+            (let* ((col-num-removed (with-temp-buffer
+                                      (insert mulled/ov-1st-line/.str-to-be-modified)
+                                      (mulled/col-num-in-region (point-min)
+                                                                (+ (point-min)
+                                                                   len-removed))))
+                   (out-of-range-p (mulled/lines/out-of-range-op-p lines
+                                                                   edit-trailing-edges-p
+                                                                   col-beg
+                                                                   col-end
+                                                                   col-num-removed)))
+              (cond
+               ;; Special function
+               ((and mulled/apply-special-fn-to-each-line-p
+                     fn-callback-pair)
+                (mulled/lines/mirror-special-fn lines
+                                                edit-trailing-edges-p
+                                                col-beg
+                                                col-end
+                                                col-num-removed
+                                                fn-name
+                                                (cdr fn-callback-pair)
+                                                orig-fn-args))
+               ;; Insertion
+               ((zerop len-removed)
+                (if out-of-range-p
                     (progn
                       (mulled/ov-1st-line/dispose ov)
                       (message "[mulled] Multiple line edit exited. (out of range)"))
-                  (mulled/lines/mirror-delete-op lines edit-trailing-edges-p beg end len-removed)))))))))))
+                  (mulled/lines/mirror-insert-op lines
+                                                 edit-trailing-edges-p
+                                                 col-beg
+                                                 col-end)))
+               ;; Replacement
+               ((not (= pt-beg pt-end))
+                (mulled/lines/mirror-replace-op lines
+                                                edit-trailing-edges-p
+                                                col-beg
+                                                col-end
+                                                col-num-removed))
+               ;; Deletion
+               (t
+                (let ( ;; May be "C-d" at end of line.
+                      (remove-newline-at-eol-p
+                       (= pt-end (mulled/ov-1st-line/get-end-with-padding ov)))
+                    
+                      ;; May be backspace at beginning of line.
+                      (backspace-at-bol-p
+                       (= pt-end (mulled/ov-1st-line/get-beg-with-padding ov))))
+                
+                  (if (or out-of-range-p
+                          remove-newline-at-eol-p
+                          (and backspace-at-bol-p
+                               (not (overlay-get ov 'mulled/beg-from-point-min-p)))) ;;XXX Should be removed?
+                      (progn
+                        (mulled/ov-1st-line/dispose ov)
+                        (message "[mulled] Multiple line edit exited. (out of range)"))
+                    (mulled/lines/mirror-delete-op lines
+                                                   edit-trailing-edges-p
+                                                   col-beg
+                                                   col-end
+                                                   col-num-removed))))))))))))
 
 ;; To prevent duplication of edit, in the lines next to 1st line,
 ;; which caused by undo/redo operation, we have to aware if the hook
@@ -650,8 +731,8 @@ a function applied at 1st line.
 
 ;; Constructor.
 ;;
-(defun mulled/lines/new (r-beg r-end edit-trailing-edges-p)
-  (mulled/lines/new-by-be-pair-lst (mulled/lines/be-pair-lst/new r-beg r-end)
+(defun mulled/lines/new (r-pt-beg r-pt-end edit-trailing-edges-p)
+  (mulled/lines/new-by-be-pair-lst (mulled/lines/be-pair-lst/new r-pt-beg r-pt-end)
                                    edit-trailing-edges-p))
 
 (defun mulled/lines/new-by-be-pair-lst (be-pair-lst edit-trailing-edges-p)
@@ -717,126 +798,169 @@ a function applied at 1st line.
   "Total amount of lines targeted for multiple line edit."
   (length (mulled/lines/be-pair-lst-of lines)))
 
-(defun mulled/lines/nth-beg (lines nth)
+(defun mulled/lines/pt-nth-beg (lines nth)
   "Start point of the `NTH' line."
   (marker-position (car (nth nth (mulled/lines/be-pair-lst-of lines)))))
 
-(defun mulled/lines/nth-end (lines nth)
+(defun mulled/lines/pt-nth-end (lines nth)
   "End point of the `NTH' line."
   (marker-position (cdr (nth nth (mulled/lines/be-pair-lst-of lines)))))
+
+(defun mulled/lines/col-from-pt-in-nth (lines nth pt)
+  "Get column at PT in NTH line."
+  (let ((pt-beg (mulled/lines/pt-nth-beg lines nth))
+        (pt-end (mulled/lines/pt-nth-end lines nth)))
+    (when (not (and (<= pt-beg pt)
+                    (<= pt pt-end)))
+      (error "[mulled/lines/pt-to-col-num-nth] Out of range: nth[%s], pt[%s]."
+             nth pt))
+    (mulled/col-num-in-region pt-beg pt)))
+
+(defun mulled/lines/pt-from-col-in-nth (lines nth col)
+  "Get column at PT in NTH line."
+  (mulled/pt-offset-by-col-num (mulled/lines/pt-nth-beg lines nth) col))
+
+(defun mulled/lines/col-num-nth (lines nth)
+  "Count number of columns in NTH line."
+  (mulled/col-num-in-region (mulled/lines/pt-nth-beg lines nth)
+                            (mulled/lines/pt-nth-end lines nth)))
 
 (defun mulled/lines/map (lines fn)
   "Apply the function `FN' to each line of multiple line edit."
   (loop for i from 0 to (1- (mulled/lines/count-of lines)) do
-        (funcall fn (mulled/lines/nth-beg lines i) (mulled/lines/nth-end lines i))))
+        (funcall fn (mulled/lines/pt-nth-beg lines i) (mulled/lines/pt-nth-end lines i))))
 
 (defun mulled/lines/map-but-1st (lines fn)
   "Apply the function `FN' to each line of multiple line edit, except 1st line."
-  (loop for i from 1 to (1- (mulled/lines/count-of lines)) do ;; skip 1st line.
-        (funcall fn (mulled/lines/nth-beg lines i) (mulled/lines/nth-end lines i))))
+  (loop for nth from 1 to (1- (mulled/lines/count-of lines)) do ;; skip 1st line.
+        (funcall fn nth)))
 
 (defun mulled/lines/out-of-1st-line-p (lines pt)
   "Test if the point is within 1st-line."
-  (let ((beg (mulled/lines/nth-beg lines 0))
-        (end (mulled/lines/nth-end lines 0)))
+  (let ((beg (mulled/lines/pt-nth-beg lines 0))
+        (end (mulled/lines/pt-nth-end lines 0)))
     (not (and (<= beg pt)
               (<= pt end)))))
 
-(defun mulled/lines/out-of-range-op-p (lines edit-trailing-edges-p op-beg op-end len-removed)
-  "Test if the operation, specified by `OP-BEG', `OP-END' and `LEN-REMOVE', is
+(defun mulled/lines/out-of-range-op-p (lines edit-trailing-edges-p col-beg col-end col-num-removed)
+  "Test if the operation, specified by `COL-BEG', `COL-END' and `LEN-REMOVE', is
 accepted by each line of multiple line edit."
   (lexical-let* ((retval nil)
-                 (len-required
+                 (col-required
                   ;; Calculate required length of each line.
-                  (+ len-removed ;; Zero when insertion.
+                  (+ col-num-removed ;; Zero when insertion.
                      (if edit-trailing-edges-p
-                         (- (mulled/lines/nth-end lines 0) op-end)
-                       (- op-beg (mulled/lines/nth-beg lines 0))))))
+                         (- (mulled/lines/col-num-nth lines 0) col-end)
+                       col-beg))))
     (mulled/lines/map-but-1st lines
-                              (lambda (beg end)
+                              (lambda (nth)
                                 ;; Test if each line has enough length or not.
-                                (let ((len-cur-line (- end beg)))
-                                  (when (< len-cur-line len-required)
+                                (let ((col-num-cur-line (mulled/lines/col-num-nth lines nth)))
+                                  (when (< col-num-cur-line col-required)
                                     (setq retval t)))))
     retval))
 
-(defun mulled/lines/mirror-insert-op (lines edit-trailing-edges-p op-beg op-end)
+(defun mulled/lines/mirror-insert-op (lines edit-trailing-edges-p col-beg col-end)
   "Reflect input operation, which is occurred in 1st line, to another lines."
-  (lexical-let* ((str (buffer-substring op-beg op-end))
-                 (offset (if edit-trailing-edges-p
-                             ;; Offset from end of line.
-                             (- (mulled/lines/nth-end lines 0) op-end)
-                           ;; Offset from beginning of line.
-                           (- op-beg (mulled/lines/nth-beg lines 0)))))
+  (lexical-let* ((str (buffer-substring (mulled/lines/pt-from-col-in-nth lines 0 col-beg)
+                                        (mulled/lines/pt-from-col-in-nth lines 0 col-end)))
+                 (col-offset (if edit-trailing-edges-p
+                                 ;; Offset from end of line.
+                                 (- (mulled/lines/col-num-nth lines 0) col-end)
+                               ;; Offset from beginning of line.
+                               col-beg)))
     (save-excursion
       (save-restriction
         (widen)
-        (mulled/lines/map-but-1st lines
-                                  (lambda (beg end)
-                                    (goto-char (if edit-trailing-edges-p
-                                                   (- end offset)
-                                                 (+ beg offset)))
-                                    (insert str)))))))
+        (mulled/lines/map-but-1st
+         lines
+         (lambda (nth)
+           (goto-char (mulled/lines/pt-from-col-in-nth
+                       lines
+                       nth
+                       (if edit-trailing-edges-p
+                           (- (mulled/lines/col-num-nth lines nth)
+                              col-offset)
+                         col-offset)))
+           (insert str)))))))
 
-(defun mulled/lines/mirror-delete-op (lines edit-trailing-edges-p op-beg op-end len-removed)
+(defun mulled/lines/mirror-delete-op (lines edit-trailing-edges-p col-beg col-end col-num-removed)
   "Reflect delete operation, which is occurred in 1st line, to another lines."
-  (lexical-let* ((1st-pair (car lines))
-                 (offset (if edit-trailing-edges-p
-                             ;; Offset from end of line.
-                             (- (mulled/lines/nth-end lines 0) op-end)
-                           ;; Offset from beginning of line.
-                           (- op-beg (mulled/lines/nth-beg lines 0)))))
+  (lexical-let* ((col-offset (if edit-trailing-edges-p
+                                 ;; Offset from end of line.
+                                 (- (mulled/lines/col-num-nth lines 0) col-end)
+                               ;; Offset from beginning of line.
+                               col-beg)))
     (save-excursion
       (save-restriction
         (widen)
-        (mulled/lines/map-but-1st lines
-                                  (lambda (beg end)
-                                    (if edit-trailing-edges-p
-                                        (delete-region (- end offset len-removed)
-                                                       (- end offset))
-                                      (delete-region (+ beg offset)
-                                                     (+ beg offset len-removed)))))))))
+        (mulled/lines/map-but-1st
+         lines
+         (lambda (nth)
+           (if edit-trailing-edges-p
+               (let ((pt-beg (mulled/lines/pt-from-col-in-nth
+                             lines nth (- (mulled/lines/col-num-nth lines nth)
+                                          col-offset
+                                          col-num-removed)))
+                     (pt-end (mulled/lines/pt-from-col-in-nth
+                               lines nth (- (mulled/lines/col-num-nth lines nth)
+                                            col-offset))))
+                 (delete-region pt-beg pt-end))
+             (let ((pt-beg (mulled/lines/pt-from-col-in-nth
+                            lines nth col-offset))
+                   (pt-end (mulled/lines/pt-from-col-in-nth
+                             lines nth (+ col-offset col-num-removed))))
+               (delete-region pt-beg pt-end)))))))))
 
-(defun mulled/lines/mirror-replace-op-aux (lines edit-trailing-edges-p op-beg op-end len-removed fn)
+(defun mulled/lines/mirror-replace-op-aux (lines edit-trailing-edges-p col-beg col-end col-num-removed fn)
   (lexical-let* ((edit-trailing-edges-p edit-trailing-edges-p)
-                 (len-removed len-removed)
+                 (col-num-removed col-num-removed)
                  (fn fn)
-                 (offset (if edit-trailing-edges-p
-                             ;; Offset from end of line.
-                             (- (mulled/lines/nth-end lines 0) op-end)
-                           ;; Offset from beginning of line.
-                           (- op-beg (mulled/lines/nth-beg lines 0)))))
+                 (col-offset (if edit-trailing-edges-p
+                                 ;; Offset from end of line.
+                                 (- (mulled/lines/col-num-nth lines 0) col-end)
+                               ;; Offset from beginning of line.
+                               col-beg)))
     (save-excursion
       (save-restriction
         (widen)
-        (mulled/lines/map-but-1st lines
-                                  (lambda (beg end)
-                                    (if edit-trailing-edges-p
-                                        (let ((beg (- end offset len-removed))
-                                              (end (- end offset)))
-                                          (funcall  fn beg end))
-                                      (let ((beg (+ beg offset))
-                                            (end (+ beg offset len-removed)))
-                                        (funcall fn beg end)))))))))
+        (mulled/lines/map-but-1st
+         lines
+         (lambda (nth)
+           (if edit-trailing-edges-p
+               (let ((pt-beg (mulled/lines/pt-from-col-in-nth
+                              lines nth (- (mulled/lines/col-num-nth lines nth)
+                                           col-offset
+                                           col-num-removed)))
+                     (pt-end (mulled/lines/pt-from-col-in-nth
+                              lines nth (- (mulled/lines/col-num-nth lines nth)
+                                           col-offset))))
+                 (funcall fn pt-beg pt-end))
+             (let ((pt-beg (mulled/lines/pt-from-col-in-nth
+                            lines nth col-offset))
+                   (pt-end (mulled/lines/pt-from-col-in-nth
+                            lines nth (+ col-offset col-num-removed))))
+               (funcall fn pt-beg pt-end)))))))))
 
-(defun mulled/lines/mirror-replace-op (lines edit-trailing-edges-p op-beg op-end len-removed)
+(defun mulled/lines/mirror-replace-op (lines edit-trailing-edges-p col-beg col-end col-num-removed)
   "Reflect replace operation, which is occurred in 1st line, to another lines."
-  (lexical-let* ((str (buffer-substring op-beg op-end)))
-    (mulled/lines/mirror-replace-op-aux lines edit-trailing-edges-p op-beg op-end len-removed
-                                        (lambda ( beg end)
-                                          (delete-region beg end)
-                                          (goto-char beg)
+  (lexical-let* ((str (buffer-substring (mulled/lines/pt-from-col-in-nth lines 0 col-beg)
+                                        (mulled/lines/pt-from-col-in-nth lines 0 col-end))))
+    (mulled/lines/mirror-replace-op-aux lines edit-trailing-edges-p col-beg col-end col-num-removed
+                                        (lambda(pt-beg pt-end)
+                                          (delete-region pt-beg pt-end)
+                                          (goto-char pt-beg)
                                           (insert str)))))
 
-(defun mulled/lines/mirror-special-fn (lines edit-trailing-edges-p op-beg op-end len-removed fn-name callback-fn orig-args)
+(defun mulled/lines/mirror-special-fn (lines edit-trailing-edges-p col-beg col-end col-num-removed fn-name callback-fn orig-args)
   "Reflect replace operation, which is occurred in 1st line, to another lines."
   (lexical-let* ((fn-name fn-name)
                  (callback-fn callback-fn)
                  (orig-args orig-args))
-    (mulled/lines/mirror-replace-op-aux lines edit-trailing-edges-p op-beg op-end len-removed
-                                        (lambda (beg end)
+    (mulled/lines/mirror-replace-op-aux lines edit-trailing-edges-p col-beg col-end col-num-removed
+                                        (lambda (pt-beg pt-end)
                                           (condition-case c
-                                              (apply callback-fn beg end orig-args)
+                                              (apply callback-fn pt-beg pt-end orig-args)
                                             (error
                                              (message "[mulled] Error in special function `%s':\n%s"
                                                       fn-name c)))))))
@@ -848,11 +972,11 @@ accepted by each line of multiple line edit."
 ;;;
 ;;; ===========================================================================
 
-(defun mulled/lines/be-pair-lst/new (r-beg r-end)
+(defun mulled/lines/be-pair-lst/new (r-pt-beg r-pt-end)
   (let (be-pair-lst)
     (save-excursion
-      (goto-char r-beg)
-      (dotimes (i (count-lines r-beg r-end))
+      (goto-char r-pt-beg)
+      (dotimes (i (count-lines r-pt-beg r-pt-end))
         (push (cons (progn (beginning-of-line)
                            (point))
                     (progn (end-of-line)
