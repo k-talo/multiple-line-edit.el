@@ -107,6 +107,10 @@
 
 ;;; Change Log:
 
+;;  v1.7, Tue Nov  9 16:48:21 2010 JST
+;;   - Fixed a bug that column number are not calculated properly
+;;     on lines which contains wide width characters.
+;;
 ;;  v1.6, Wed Oct 27 02:58:04 2010 JST
 ;;   - Experimental user option `mulled/apply-special-fn-to-each-line-p'.
 ;;     When this value is non-nil, special function defined in
