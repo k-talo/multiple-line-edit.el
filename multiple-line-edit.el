@@ -335,7 +335,7 @@ a function applied at 1st line.
     (and ov
          (not (mulled/ov-1st-line/edit-trailing-edges-p ov)))))
 
-;; Point and Column transrations.
+;; Point and Column translations.
 ;; NOTE: Point counts number of characters.
 ;;       Column counts visual width of characters.
 
@@ -604,29 +604,32 @@ Line break character will be counted as one column."
 ;;
 
 (defvar mulled/ov-1st-line/.str-to-be-modified nil)
+(make-variable-buffer-local 'mulled/ov-1st-line/.str-to-be-modified)
 
 ;; The hook defined below will be called when modifications is
 ;; occur on the overlay placed over the 1st line of multiple edit.
 (defun mulled/ov-1st-line/mod-hook-fn (&rest args)
   (let* ((parent-frame   (backtrace-frame 3))
-         (fn-name        (let ((name (symbol-name (nth 1 parent-frame))))
-                           (when (string-match "^ad-Orig-" name)
-                             (setq name (replace-match "" nil nil name)))
-                           (intern name)))
-         (fn-callback-pair (assoc fn-name mulled/special-fn-alist)) ;; **EXPERIMENTAL**
+         (fn-name        (when (symbolp (nth 1 parent-frame))
+                           (let ((name (symbol-name (nth 1 parent-frame))))
+                             (when (string-match "^ad-Orig-" name)
+                               (setq name (replace-match "" nil nil name)))
+                             (intern name))))
+         (fn-callback-pair (and fn-name
+                                (assoc fn-name mulled/special-fn-alist))) ;; **EXPERIMENTAL**
          (orig-fn-args   (nthcdr 2 parent-frame))
 
          (ov             (nth 0 args))
          (after-p        (nth 1 args))
          (pt-beg         (nth 2 args))
          (pt-end         (nth 3 args))
-         (len-removed    (nth 4 args)) ;; Not set in before modification.
-         (edit-trailing-edges-p (overlay-get ov 'mulled/edit-trailing-edges-p)))
+         (len-removed    (nth 4 args))) ;; Not set in before modification.
     (when (mulled/ov-1st-line/ov-1st-line-p ov) ;; Overlay is not disposed.
       (let* ((lines   (overlay-get ov 'mulled/lines ))
              (col-beg (mulled/lines/col-from-pt-in-nth lines 0 pt-beg))
-             (col-end (mulled/lines/col-from-pt-in-nth lines 0 pt-end)))
-        
+             (col-end (mulled/lines/col-from-pt-in-nth lines 0 pt-end))
+             (edit-trailing-edges-p (overlay-get ov 'mulled/edit-trailing-edges-p)))
+
         (if (not after-p)
             ;; Before modification.
             ;;
@@ -644,69 +647,72 @@ Line break character will be counted as one column."
 
           ;; After modification.
           ;;
-          (if mulled/.running-primitive-undo-p
-              (setq mulled/.undo-at (point))
-            (let* ((col-num-removed (with-temp-buffer
-                                      (insert mulled/ov-1st-line/.str-to-be-modified)
-                                      (mulled/col-num-in-region (point-min)
-                                                                (+ (point-min)
-                                                                   len-removed))))
-                   (out-of-range-p (mulled/lines/out-of-range-op-p lines
-                                                                   edit-trailing-edges-p
-                                                                   col-beg
-                                                                   col-end
-                                                                   col-num-removed)))
-              (cond
-               ;; Special function
-               ((and mulled/apply-special-fn-to-each-line-p
-                     fn-callback-pair)
-                (mulled/lines/mirror-special-fn lines
-                                                edit-trailing-edges-p
-                                                col-beg
-                                                col-end
-                                                col-num-removed
-                                                fn-name
-                                                (cdr fn-callback-pair)
-                                                orig-fn-args))
-               ;; Insertion
-               ((zerop len-removed)
-                (if out-of-range-p
-                    (progn
-                      (mulled/ov-1st-line/dispose ov)
-                      (message "[mulled] Multiple line edit exited. (out of range)"))
-                  (mulled/lines/mirror-insert-op lines
-                                                 edit-trailing-edges-p
-                                                 col-beg
-                                                 col-end)))
-               ;; Replacement
-               ((not (= pt-beg pt-end))
-                (mulled/lines/mirror-replace-op lines
-                                                edit-trailing-edges-p
-                                                col-beg
-                                                col-end
-                                                col-num-removed))
-               ;; Deletion
-               (t
-                (let ( ;; May be "C-d" at end of line.
-                      (remove-newline-at-eol-p
-                       (= pt-end (mulled/ov-1st-line/get-end-with-padding ov)))
-                    
-                      ;; May be backspace at beginning of line.
-                      (backspace-at-bol-p
-                       (= pt-end (mulled/ov-1st-line/get-beg-with-padding ov))))
-                
-                  (if (or out-of-range-p
-                          remove-newline-at-eol-p
-                          (and backspace-at-bol-p
-                               (not (overlay-get ov 'mulled/beg-from-point-min-p)))) ;;XXX Should be removed?
+          (progn
+            (if mulled/.running-primitive-undo-p
+                (setq mulled/.undo-at (point))
+              (let* ((str-maybe-removed mulled/ov-1st-line/.str-to-be-modified)
+                     (col-num-removed (with-temp-buffer
+                                        (insert str-maybe-removed)
+                                        (mulled/col-num-in-region (point-min)
+                                                                  (+ (point-min)
+                                                                     len-removed))))
+                     (out-of-range-p (mulled/lines/out-of-range-op-p lines
+                                                                     edit-trailing-edges-p
+                                                                     col-beg
+                                                                     col-end
+                                                                     col-num-removed)))
+                (cond
+                 ;; Special function
+                 ((and mulled/apply-special-fn-to-each-line-p
+                       fn-callback-pair)
+                  (mulled/lines/mirror-special-fn lines
+                                                  edit-trailing-edges-p
+                                                  col-beg
+                                                  col-end
+                                                  col-num-removed
+                                                  fn-name
+                                                  (cdr fn-callback-pair)
+                                                  orig-fn-args))
+                 ;; Insertion
+                 ((zerop len-removed)
+                  (if out-of-range-p
                       (progn
                         (mulled/ov-1st-line/dispose ov)
                         (message "[mulled] Multiple line edit exited. (out of range)"))
-                    (mulled/lines/mirror-delete-op lines
+                    (mulled/lines/mirror-insert-op lines
                                                    edit-trailing-edges-p
                                                    col-beg
-                                                   col-end
-                                                   col-num-removed))))))))))))
+                                                   col-end)))
+                 ;; Replacement
+                 ((not (= pt-beg pt-end))
+                  (mulled/lines/mirror-replace-op lines
+                                                  edit-trailing-edges-p
+                                                  col-beg
+                                                  col-end
+                                                  col-num-removed))
+                 ;; Deletion
+                 (t
+                  (let ( ;; May be "C-d" at end of line.
+                        (remove-newline-at-eol-p
+                         (= pt-end (mulled/ov-1st-line/get-end-with-padding ov)))
+                    
+                        ;; May be backspace at beginning of line.
+                        (backspace-at-bol-p
+                         (= pt-end (mulled/ov-1st-line/get-beg-with-padding ov))))
+                
+                    (if (or out-of-range-p
+                            remove-newline-at-eol-p
+                            (and backspace-at-bol-p
+                                 (not (overlay-get ov 'mulled/beg-from-point-min-p)))) ;;XXX Should be removed?
+                        (progn
+                          (mulled/ov-1st-line/dispose ov)
+                          (message "[mulled] Multiple line edit exited. (out of range)"))
+                      (mulled/lines/mirror-delete-op lines
+                                                     edit-trailing-edges-p
+                                                     col-beg
+                                                     col-end
+                                                     col-num-removed)))))))
+            (setq mulled/ov-1st-line/.str-to-be-modified "")))))))
 
 ;; To prevent duplication of edit, in the lines next to 1st line,
 ;; which caused by undo/redo operation, we have to aware if the hook
@@ -1026,6 +1032,99 @@ accepted by each line of multiple line edit."
 ;;
 ;; Here we make patches to cope with this restriction.
 
+
+;; Utility functions.
+;;
+(defun mulled/mod-hook-fix/run-orig-insert (&rest args)
+  (let ((ov (mulled/ov-1st-line/find-at (point))))
+    (if (or (not (mulled/ov-1st-line/ov-1st-line-p ov))
+            (and (boundp 'run-orig-insert-fn-p) run-orig-insert-fn-p))
+        (apply mulled/mod-hook-fix/orig-insert-fn args)
+      (let* ((run-orig-insert-fn-p t) ;; Don't loop eternally.
+             (insert-beg (point))
+             (retval (progn (mulled/ov-1st-line/mod-hook-fn ov
+                                                            nil
+                                                            insert-beg
+                                                            insert-beg)
+                            (apply mulled/mod-hook-fix/orig-insert-fn args)))
+             (insert-end (save-restriction (widen) (point))))
+        (mulled/ov-1st-line/mod-hook-fn ov
+                                        t
+                                        insert-beg
+                                        insert-end
+                                        0)
+        retval))))
+
+(defun mulled/mod-hook-fix/run-orig-delete-region (start end)
+  (interactive "r")
+  (let ((ov (mulled/ov-1st-line/find-at start)))
+    (if (or (not (mulled/ov-1st-line/ov-1st-line-p ov))
+            (and (boundp 'run-orig-delete-region-fn-p) run-orig-delete-region-fn-p))
+        (funcall mulled/mod-hook-fix/orig-delete-region-fn start end)
+      (let* ((run-orig-delete-region-fn-p t) ;; Don't loop eternally.
+             (remove-beg (save-excursion
+                           (goto-char start)
+                           (point)))
+             (remove-end (save-excursion
+                           (goto-char end)
+                           (point)))
+             (remove-len (- remove-end remove-beg))
+             (mulled/ov-1st-line/.str-to-be-modified
+              (buffer-substring start end)))
+        (prog2
+            (mulled/ov-1st-line/mod-hook-fn ov
+                                            nil
+                                            remove-beg
+                                            remove-end)
+            (funcall mulled/mod-hook-fix/orig-delete-region-fn start end)
+          ;; mirror insertion.
+          (mulled/ov-1st-line/mod-hook-fn ov
+                                          t
+                                          remove-beg
+                                          remove-beg
+                                          remove-len))))))
+
+(defun mulled/mod-hook-fix/run-orig-replace-match (newtext &optional fixedcase literal string subexp)
+  (let ((ov (mulled/ov-1st-line/find-at (point))))
+    (if (or (not (match-string 0))
+            (not (mulled/ov-1st-line/ov-1st-line-p ov))
+            (and (boundp 'run-orig-delete-region-fn-p) run-orig-delete-region-fn-p))
+        (funcall mulled/mod-hook-fix/orig-replace-match-fn newtext fixedcase literal string subexp)
+      (let* ((match-beg (save-excursion
+                          (goto-char (match-beginning 0))
+                          (point-marker)))
+             (match-end (save-excursion
+                          (goto-char (match-end 0))
+                          (point-marker)))
+             (len-removed (length (match-string 0))))
+        (mulled/ov-1st-line/mod-hook-fn ov
+                                        nil
+                                        match-beg
+                                        match-end)
+        (funcall mulled/mod-hook-fix/orig-replace-match-fn newtext fixedcase literal string subexp)
+        (mulled/ov-1st-line/mod-hook-fn ov
+                                        t
+                                        match-beg
+                                        match-end
+                                        len-removed)))))
+  
+(defun mulled/mod-hook-fix/run-with-mod-hook-fix (fn)
+  (let ((mulled/mod-hook-fix/orig-insert-fn        (symbol-function 'insert))
+        (mulled/mod-hook-fix/orig-delete-region-fn (symbol-function 'delete-region))
+        (mulled/mod-hook-fix/orig-replace-match-fn (symbol-function 'replace-match)))
+    (unwind-protect
+        (progn
+          (setf (symbol-function 'insert)        'mulled/mod-hook-fix/run-orig-insert)
+          (setf (symbol-function 'delete-region) 'mulled/mod-hook-fix/run-orig-delete-region)
+          (setf (symbol-function 'replace-match) 'mulled/mod-hook-fix/run-orig-replace-match)
+          (funcall fn))
+      (setf (symbol-function 'insert)        mulled/mod-hook-fix/orig-insert-fn)
+      (setf (symbol-function 'delete-region) mulled/mod-hook-fix/orig-delete-region-fn)
+      (setf (symbol-function 'replace-match) mulled/mod-hook-fix/orig-replace-match-fn))))
+
+
+;; YAS support functions.
+;;
 (defun mulled/experimental/install-yas-support-aux ()
   (remove-hook 'yas/minor-mode-hook 'mulled/experimental/install-yas-support-aux)
   
@@ -1035,13 +1134,15 @@ accepted by each line of multiple line edit."
     (let ((ov (mulled/ov-1st-line/find-at (point))))
       (when (and ov
                  (string= ad-return-value "[yas] snippet expanded."))
-        (let* ((remove-at (cdr (nth 2 buffer-undo-list)))
+        (let* ((remove-at  (cdr (nth 2 buffer-undo-list)))
+               (remove-str (car (nth 2 buffer-undo-list)))
                (remove-len (length (car (nth 2 buffer-undo-list))))
                (insert-beg (car (nth 1 buffer-undo-list)))
                (insert-end (cdr (nth 1 buffer-undo-list)))
                (insert-len (- insert-end insert-beg))
                (edit-trailing-edges-p (mulled/ov-1st-line/edit-trailing-edges-p ov)))
           ;; Remove keyword.
+          (setq mulled/ov-1st-line/.str-to-be-modified remove-str)
           (mulled/ov-1st-line/mod-hook-fn ov
                                           t
                                           (+ remove-at (if edit-trailing-edges-p insert-len 0))
@@ -1049,74 +1150,29 @@ accepted by each line of multiple line edit."
                                           remove-len)
           ;; Insert snippet.
           (mulled/ov-1st-line/mod-hook-fn ov
+                                          nil
+                                          insert-beg
+                                          insert-beg)
+          (mulled/ov-1st-line/mod-hook-fn ov
                                           t
                                           insert-beg
                                           insert-end
                                           0)))))
   (ad-activate 'yas/expand-snippet)
-  
+
 
   ;; When snippets are expanded in 1st line, mirror them to another lines.
   ;;
   (defadvice yas/skip-and-clear (around mulled/yas/skip-and-clear-hook-fn (field))
-    (lexical-let ((ov (mulled/ov-1st-line/find-at (point)))
-                  (orig-delete-region-fn (symbol-function 'delete-region)))
-      (if ov
-          (unwind-protect
-              (progn
-                (setf (symbol-function 'delete-region)
-                      (lambda (beg end)
-                        (setf (symbol-function 'delete-region) orig-delete-region-fn)
-
-                        (let ((beg (+ 0 beg))
-                              (end (+ 0 end)))
-                          (funcall orig-delete-region-fn beg end)
-                          (mulled/ov-1st-line/mod-hook-fn ov
-                                                          t
-                                                          beg
-                                                          beg
-                                                          (- end beg)))))
-                ad-do-it)
-            (setf (symbol-function 'delete-region) orig-delete-region-fn))
-        ad-do-it)))
+    (mulled/mod-hook-fix/run-with-mod-hook-fix (lambda () ad-do-it)))
   (ad-activate 'yas/skip-and-clear)
-
 
 
   ;; When modification in a field is mirrored to another fields by YASnippet,
   ;; reflect mirrored modification to another lines.
   (defadvice yas/mirror-update-display (around mulled/yas/mirror-update-display-hook-fn (mirror field))
-    (lexical-let ((ov (mulled/ov-1st-line/find-at (point)))
-                  (orig-insert-fn (symbol-function 'insert))
-                  (orig-delete-region-fn (symbol-function 'delete-region)))
-      (if ov
-          (unwind-protect
-              (progn
-                (setf (symbol-function 'insert)
-                      (lambda (&rest args)
-                        (setf (symbol-function 'insert) orig-insert-fn)
-                        (let ((beg (point))
-                              (end (progn (apply orig-insert-fn args) (point))))
-                          (mulled/ov-1st-line/mod-hook-fn ov
-                                                          t
-                                                          beg
-                                                          end
-                                                          0))))
-                (setf (symbol-function 'delete-region)
-                      (lambda (beg end)
-                        (setf (symbol-function 'delete-region) orig-delete-region-fn)
-                        (let ((beg (+ 0 beg))
-                              (end (+ 0 end)))
-                          (funcall orig-delete-region-fn beg end)
-                          (mulled/ov-1st-line/mod-hook-fn ov
-                                                          t
-                                                          beg
-                                                          beg
-                                                          (- end beg)))))
-                ad-do-it)
-            (setf (symbol-function 'insert) orig-insert-fn)
-            (setf (symbol-function 'delete-region) orig-delete-region-fn))
-        ad-do-it)))
+    (mulled/mod-hook-fix/run-with-mod-hook-fix (lambda () ad-do-it)))
+
 
   ;; Give advice to `yas/mirror-update-display' while
   ;; `yas/on-field-overlay-modification' is running.
