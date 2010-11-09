@@ -1113,6 +1113,8 @@ accepted by each line of multiple line edit."
                                         len-removed)))))
   
 (defun mulled/mod-hook-fix/run-with-mod-hook-fix (fn)
+  ;; NOTE: These three variables are used in dynamic binding context,
+  ;;       so just ignore compiler warning `reference to free variable'.
   (let ((mulled/mod-hook-fix/orig-insert-fn        (symbol-function 'insert))
         (mulled/mod-hook-fix/orig-delete-region-fn (symbol-function 'delete-region))
         (mulled/mod-hook-fix/orig-replace-match-fn (symbol-function 'replace-match)))
