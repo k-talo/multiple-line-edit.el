@@ -107,6 +107,10 @@
 
 ;;; Change Log:
 
+;;  v1.8, Sun Nov 14 22:05:08 2010 JST
+;;   - Fixed a bug that the indicator on left fringe was not displayed
+;      when the code is byte compiled.
+;;
 ;;  v1.7, Tue Nov  9 16:48:21 2010 JST
 ;;   - Fixed a bug that column number are not calculated properly
 ;;     on lines which contains wide width characters.
