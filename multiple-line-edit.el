@@ -761,8 +761,11 @@ Line break character will be counted as one column."
   (lexical-let (fringe-ov-lst)
     (mulled/lines/map lines
                       (lambda (beg end)
-                        (let* ((indicator-l (if edit-trailing-edges-p "<" ">"))
-                               (indicator-r (if edit-trailing-edges-p "<" ">"))
+                        ;; Copy strings of `indicator-l' and `indicator-r' not to make them
+                        ;; identical when the code is byte compiled.
+                        ;; -- This may be a bug of the elisp compiler.
+                        (let* ((indicator-l (copy-sequence (if edit-trailing-edges-p "<" ">")))
+                               (indicator-r (copy-sequence (if edit-trailing-edges-p "<" ">")))
                                (fringe (if edit-trailing-edges-p 'right-fringe 'left-fringe))
                                (fringe-bmp (if edit-trailing-edges-p 'mulled/indicator-right
                                              'mulled/indicator-left))
