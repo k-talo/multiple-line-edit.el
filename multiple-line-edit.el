@@ -762,40 +762,85 @@ Line break character will be counted as one column."
   (define-fringe-bitmap 'mulled/indicator-right [#x00 #x33 #x66 #xcc #xcc #x66 #x33 #x00]))
 
 (defun mulled/lines/init-fringe-ov-lst (lines edit-trailing-edges-p)
-  (lexical-let (fringe-ov-lst)
-    (mulled/lines/map lines
-                      (lambda (beg end)
-                        ;; Copy strings of `indicator-l' and `indicator-r' not to make them
-                        ;; identical when the code is byte compiled.
-                        ;; -- This may be a bug of the elisp compiler.
-                        (let* ((indicator-l (copy-sequence (if edit-trailing-edges-p "<" ">")))
-                               (indicator-r (copy-sequence (if edit-trailing-edges-p "<" ">")))
-                               (fringe (if edit-trailing-edges-p 'right-fringe 'left-fringe))
-                               (fringe-bmp (if edit-trailing-edges-p 'mulled/indicator-right
-                                             'mulled/indicator-left))
-                               (ov (make-overlay beg
-                                                 end
-                                                 nil
-                                                 nil
-                                                 t)))
-                          (when (boundp 'fringe-bitmaps)
-                            (put-text-property 0 (length indicator-l)
-                                               'display (list 'left-fringe
-                                                              fringe-bmp
-                                                              'mulled/fringe-face)
-                                               indicator-l)
-                            (put-text-property 0 (length indicator-r)
-                                               'display (list 'right-fringe
-                                                              fringe-bmp
-                                                              'mulled/fringe-face)
-                                               indicator-r))
+  (lexical-let (fringe-ov-lst
+                (cur-win (selected-window)))
+    (mulled/lines/map
+     lines
+     (if ;; Test if fringe bitmaps is available.
+         (and (boundp 'fringe-bitmaps)
+              (display-images-p)
+              (>= (or left-fringe-width
+                      (and cur-win (car (window-fringes cur-win)))
+                      0)
+                  8)
+              (>= (or right-fringe-width
+                      (and cur-win (cadr (window-fringes cur-win)))
+                      0)
+                  8))
+         ;; Fringe bitmap is available.
+         ;;
+         (lambda (beg end)
+           ;; Copy strings of `indicator-l' and `indicator-r' not to make them
+           ;; identical when the code is byte compiled.
+           ;; -- This may be a bug of the elisp compiler.
+           (let* ((indicator-l (copy-sequence (if edit-trailing-edges-p "<" ">")))
+                  (indicator-r (copy-sequence (if edit-trailing-edges-p "<" ">")))
+                  (fringe (if edit-trailing-edges-p 'right-fringe 'left-fringe))
+                  (fringe-bmp (if edit-trailing-edges-p 'mulled/indicator-right
+                                'mulled/indicator-left))
+                  (ov (make-overlay beg
+                                    end
+                                    nil
+                                    nil
+                                    t)))
+             (when (boundp 'fringe-bitmaps)
+               (put-text-property 0 (length indicator-l)
+                                  'display (list 'left-fringe
+                                                 fringe-bmp
+                                                 'mulled/fringe-face)
+                                  indicator-l)
+               (put-text-property 0 (length indicator-r)
+                                  'display (list 'right-fringe
+                                                 fringe-bmp
+                                                 'mulled/fringe-face)
+                                  indicator-r))
+             (overlay-put ov 'before-string indicator-l)
+             (overlay-put ov 'after-string indicator-r)
+                          
+             (overlay-put ov  'priority 100)
+                          
+             (push ov fringe-ov-lst)))
+       ;; Fringe bitmap is NOT available.
+       ;;
+       (lambda (beg end)
+         ;; Copy strings of `indicator-l' and `indicator-r' not to make them
+         ;; identical when the code is byte compiled.
+         ;; -- This may be a bug of the elisp compiler.
+         (let* ((indicator-l (copy-sequence (if edit-trailing-edges-p "<" ">")))
+                (indicator-r (concat (if edit-trailing-edges-p "<" ">")
+                                     (if (< end (point-max)) "\n" "")))
+                (ov-beg (make-overlay beg
+                                      beg
+                                      nil
+                                      nil
+                                      nil))
+                (ov-end (make-overlay end
+                                      (if (< end (point-max)) (1+ end) end)
+                                      nil
+                                      t
+                                      (if (< end (point-max)) nil t))))
+           (overlay-put ov-beg 'before-string indicator-l)
+           (overlay-put ov-end
+                        (if (< end (point-max))
+                            'display
+                          'before-string)
+                        indicator-r)
+                          
+           (overlay-put ov-beg  'priority 100)
+           (overlay-put ov-end  'priority 100)
 
-                          (overlay-put ov 'before-string indicator-l)
-                          (overlay-put ov 'after-string indicator-r)
-                          
-                          (overlay-put ov  'priority 100)
-                          
-                          (push ov fringe-ov-lst))))
+           (push ov-beg fringe-ov-lst)
+           (push ov-end fringe-ov-lst)))))
     (reverse fringe-ov-lst)))
 
 (defun mulled/lines/dispose (lines)
