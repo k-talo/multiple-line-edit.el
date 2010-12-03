@@ -107,6 +107,9 @@
 
 ;;; Change Log:
 
+;;   - Restore position of cursor when multiple line edit is
+;;     re-activated by `undo'.
+;;
 ;;   - New option `keep-offset' to multiple lines edit commands.
 ;;
 ;;  v1.8, Sun Nov 14 22:05:08 2010 JST
@@ -160,6 +163,7 @@
 ;;
 (defvar mulled/.running-primitive-undo-p nil)
 (defvar mulled/.undo-at nil)
+(defvar mulled/.last-pt nil)
 
 
 ;;; ===========================================================================
@@ -526,7 +530,8 @@ Line break character will be counted as one column."
                                     (not (and (<= ov-beg cur-pt)
                                               (<= cur-pt ov-end))))
                            (mulled/ov-1st-line/dispose ov)
-                           (message "[mulled] Multiple line edit exited."))))
+                           (message "[mulled] Multiple line edit exited."))
+                         (setq mulled/.last-pt cur-pt)))
                    ;; To not break pre/post command hooks,
                    ;; we do not rise error in these hooks.
                    (error
@@ -594,6 +599,8 @@ Line break character will be counted as one column."
          (lines (overlay-get ov 'mulled/lines)))
     (when (and mulled/reactivate-by-undo
                (listp buffer-undo-list))
+      (when mulled/.last-pt
+        (push `(apply goto-char ,mulled/.last-pt) buffer-undo-list))
       (push (mulled/ov-1st-line/make-reactivate-form ov) buffer-undo-list))
 
     (mulled/lines/dispose lines)
@@ -616,7 +623,8 @@ Line break character will be counted as one column."
     (remove-hook 'pre-command-hook fn)
     (remove-hook 'post-command-hook fn)
     (delete-overlay ov)
-    (setq mulled/.undo-at nil)))
+    (setq mulled/.undo-at nil)
+    (setq mulled/.last-pt cur-pt)))
 
 
 ;; Instance Methods.
