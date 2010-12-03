@@ -625,7 +625,7 @@ Line break character will be counted as one column."
     (remove-hook 'post-command-hook fn)
     (delete-overlay ov)
     (setq mulled/.undo-at nil)
-    (setq mulled/.last-pt cur-pt)))
+    (setq mulled/.last-pt nil)))
 
 
 ;; Instance Methods.
