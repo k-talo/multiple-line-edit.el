@@ -107,6 +107,7 @@
 
 ;;; Change Log:
 
+;;  v1.9, Fri Dec  3 17:55:52 2010 JST
 ;;   - Restore position of cursor when multiple line edit is
 ;;     re-activated by `undo'.
 ;;
