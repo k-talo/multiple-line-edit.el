@@ -107,6 +107,8 @@
 
 ;;; Change Log:
 
+;;   - New option `keep-offset' to multiple lines edit commands.
+;;
 ;;  v1.8, Sun Nov 14 22:05:08 2010 JST
 ;;   - Fixed a bug that the indicator on left fringe was not displayed
 ;      when the code is byte compiled.
