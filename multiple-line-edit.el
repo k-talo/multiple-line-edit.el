@@ -107,6 +107,11 @@
 
 ;;; Change Log:
 
+;;   - Fixed a bug that cursor position won't be set properly
+;;     by `mulled/edit-leading-edges' and `mulled/edit-trailing-edges'
+;;     with `keep-offset' option when wide-width character such as
+;;     TAB and Kanji characters are in lines.
+;;
 ;;  v1.9, Fri Dec  3 17:55:52 2010 JST
 ;;   - Restore position of cursor when multiple line edit is
 ;;     re-activated by `undo'.
@@ -554,36 +559,31 @@ Line break character will be counted as one column."
     ;;
     (cond
      ((and keep-offset
+           ;; Inside of multiple line edit?
            (mulled/lines/nth-from-pt lines (point)))
-      ;; Save position as possible as we can.
+      ;; Do not move cursor as possible as we can.
       ;;
-      (let ((offset (cond
-                     (edit-trailing-edges-p
-                      (- (mulled/lines/col-num-nth lines
-                                                   (mulled/lines/nth-from-pt
-                                                    lines (point)))
-                         (current-column)))
-                     (t
-                      (current-column)))))
-        (goto-char beg)
-        (cond
-         (edit-trailing-edges-p
-          (end-of-line)
-          (backward-char (min offset
-                              (mulled/lines/col-num-min lines))))
-         (t
-          (beginning-of-line)
-          (forward-char (min offset
-                             (mulled/lines/col-num-min lines)))))))
-      (t
-       ;; Move to edges.
-       ;;
-       (goto-char beg)
-       (cond
-        (edit-trailing-edges-p
-         (end-of-line))
-        (t
-         (beginning-of-line)))))
+      (let* ((nth         (mulled/lines/nth-from-pt lines (point)))
+             (col-num     (mulled/lines/col-num-nth lines nth))
+             (col-num-1st (mulled/lines/col-num-nth lines 0))
+             (new-col-1st (cond
+                           (edit-trailing-edges-p
+                            (let ((offset (- col-num (current-column))))
+                              (max 0 (- col-num-1st offset))))
+                           (t
+                            (min col-num (current-column))))))
+        (goto-char beg) ;; Move to 1st line.
+        (beginning-of-line)
+        (move-to-column new-col-1st)))
+     (t
+      ;; Move to edges.
+      ;;
+      (goto-char beg)
+      (cond
+       (edit-trailing-edges-p
+        (end-of-line))
+       (t
+        (beginning-of-line)))))
 
     ;; Deactivate selection.
     (setq mark-active nil)
