@@ -107,6 +107,7 @@
 
 ;;; Change Log:
 
+;;  v1.10 Sat Dec  4 16:15:07 2010 JST
 ;;   - Fixed a bug that cursor position won't be set properly
 ;;     by `mulled/edit-leading-edges' and `mulled/edit-trailing-edges'
 ;;     with `keep-offset' option when wide-width character such as
