@@ -55,7 +55,7 @@
 ;; below.
 ;;
 ;;   1. Select multiple line that you want to edit.
-;
+;;
 ;;   2. If you want to edit the leading edges of each line,
 ;;      type `M-x mulled/edit-leading-edges RET'.
 ;;
