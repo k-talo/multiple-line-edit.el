@@ -107,6 +107,8 @@
 
 ;;; Change Log:
 
+;;  v2.0.0 Mon Dec 27 03:06:00 2010 JST
+;;   - Changed version numbering rule from x.y to x.y.z.
 ;;   - Display pseudo cursors on each multiple edit lines.
 ;;
 ;;  v1.11 Mon Dec 27 01:48:21 2010
