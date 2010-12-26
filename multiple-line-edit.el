@@ -383,7 +383,11 @@ of line when switched to Trailing Edges Edit."
 (defun mulled/pt-offset-by-col-num (pt-beg col-num)
   "Calculate point offset from PT-BEG by COL-NUM.
 
-Line break character will be counted as one column."
+Line break character will be counted as one column.
+
+When COL-NUM is negative number, returns PT-BEG.
+When the result exceeds `point-max' of current buffer,
+returns `point-max'."
   (let ((done nil))
     (save-excursion
       (save-restriction
@@ -397,7 +401,7 @@ Line break character will be counted as one column."
           (let ((cur-col (current-column)))
             (if (<= col-num cur-col)
                 (progn
-                  (move-to-column col-num)
+                  (move-to-column (max 0 col-num))
                   (setq done t))
               ;; Count line break as 1 column.
               (progn
