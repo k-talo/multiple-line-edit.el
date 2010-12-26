@@ -107,8 +107,12 @@
 
 ;;; Change Log:
 
+;;  v1.11 Mon Dec 27 01:48:21 2010
 ;;   - Fixed a bug that the feature `reactivation by undo' does not
 ;;     work if the deactivation was not triggered by keyboard quit.
+;;
+;;   - Fixed error in `mulled/pt-offset-by-col-num' which occurred
+;;     when the COL-NUM is negative number.
 ;;
 ;;  v1.10 Sat Dec  4 16:15:07 2010 JST
 ;;   - Fixed a bug that cursor position won't be set properly
