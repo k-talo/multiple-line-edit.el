@@ -178,6 +178,7 @@
 (defvar mulled/.running-primitive-undo-p nil)
 (defvar mulled/.undo-at nil)
 (defvar mulled/.last-pt nil)
+(make-variable-buffer-local 'mulled/.last-pt)
 
 
 ;;; ===========================================================================
@@ -193,6 +194,22 @@
 (defcustom mulled/reactivate-by-undo t
   "Non-nil means reactivate multiple line edit after undo/redo."
   :type 'boolean
+  :group 'multiple-line-edit)
+
+(defface mulled/cursor-face
+  '((((class color) (background light))
+     :background "grey")
+    (((class color) (background dark))
+     :background "white")
+     (t :inverse-video t))
+  "Face used for cursor of multiple line edit."
+  :group 'multiple-line-edit)
+
+(defface mulled/out-of-range-cursor-face
+  '((((class color)) :foreground "white" :background "Red1")
+    (t :inverse-video t :weight bold))
+  "Face used for cursor of multiple line edit when
+cursor is out of range in some line."
   :group 'multiple-line-edit)
 
 (defface mulled/fringe-face
@@ -541,15 +558,20 @@ Line break character will be counted as one column."
                                           (goto-char mulled/.undo-at)
                                           (setq mulled/.undo-at nil))
                                         (point))))
-                         ;; When the cursor went out of 1st line,
-                         ;; stop multiple line edit.
-                         (when (and (eq (current-buffer)
-                                        ov-buf)
-                                    (not (and (<= ov-beg cur-pt)
-                                              (<= cur-pt ov-end))))
-                           (mulled/ov-1st-line/dispose ov)
-                           (message "[mulled] Multiple line edit exited."))
-                         (setq mulled/.last-pt cur-pt)))
+                         (when (eq (current-buffer)
+                                   ov-buf)
+                           (cond
+                            ((not (and (<= ov-beg cur-pt)
+                                       (<= cur-pt ov-end)))
+                             ;; When the cursor went out of 1st line,
+                             ;; stop multiple line edit.
+                             (mulled/ov-1st-line/dispose ov)
+                             (message "[mulled] Multiple line edit exited."))
+                            ((not (equal mulled/.last-pt cur-pt))
+                             ;; Cursor is moved.
+                             (mulled/ov-1st-line/update-cursor-pos ov)))
+                         
+                           (setq mulled/.last-pt cur-pt))))
                    ;; To not break pre/post command hooks,
                    ;; we do not rise error in these hooks.
                    (error
@@ -600,6 +622,7 @@ Line break character will be counted as one column."
     ;; Deactivate selection.
     (setq mark-active nil)
     
+    (mulled/lines/update-cursor-ov-lst lines edit-trailing-edges-p)
     ov))
 
 ;; Destructor.
@@ -655,6 +678,13 @@ Line break character will be counted as one column."
 (defun mulled/ov-1st-line/make-dispose-form (ov)
 `(apply mulled/ov-1st-line/find-and-dispose-at
         ,(mulled/ov-1st-line/get-beg-without-padding ov)))
+
+(defun mulled/ov-1st-line/update-cursor-pos (ov)
+  (let* ((lines                 (overlay-get ov 'mulled/lines))
+         (edit-trailing-edges-p (overlay-get ov 'mulled/edit-trailing-edges-p)))
+    (mulled/lines/update-cursor-ov-lst
+     lines
+     edit-trailing-edges-p)))
 
 (defun mulled/ov-1st-line/switch-direction (ov &optional keep-offset)
   (let* ((lines (overlay-get ov 'mulled/lines))
@@ -796,7 +826,8 @@ Line break character will be counted as one column."
                                                      col-beg
                                                      col-end
                                                      col-num-removed)))))))
-            (setq mulled/ov-1st-line/.str-to-be-modified "")))))))
+            (setq mulled/ov-1st-line/.str-to-be-modified "")
+            (mulled/ov-1st-line/update-cursor-pos ov)))))))
 
 ;; To prevent duplication of edit, in the lines next to 1st line,
 ;; which caused by undo/redo operation, we have to aware if the hook
@@ -828,8 +859,10 @@ Line break character will be counted as one column."
 (defun mulled/lines/new-by-be-pair-lst (be-pair-lst edit-trailing-edges-p)
   (mulled/lines/be-pair-lst/activate-marker be-pair-lst)
   (let* ((fringe-ov-lst (mulled/lines/init-fringe-ov-lst (list be-pair-lst)
+                                                         edit-trailing-edges-p))
+         (cursor-ov-lst (mulled/lines/init-cursor-ov-lst (list be-pair-lst)
                                                          edit-trailing-edges-p)))
-    (list be-pair-lst fringe-ov-lst)))
+    (list be-pair-lst fringe-ov-lst cursor-ov-lst)))
 
 ;; Initialize indicator icons on fringe of each line.
 ;;
@@ -923,9 +956,25 @@ Line break character will be counted as one column."
            (push ov-end fringe-ov-lst)))))
     (reverse fringe-ov-lst)))
 
+(defun mulled/lines/init-cursor-ov-lst (lines edit-trailing-edges-p)
+  (lexical-let ((cursor-ov-lst nil))
+    (mulled/lines/map
+     lines
+     (lambda (idx)
+       (push (let ((ov (make-overlay (point) (point))))
+               (overlay-put ov 'priority 1000)
+               ov)
+             cursor-ov-lst)))
+    ;; (mulled/lines/update-cursor-ov-lst-aux lines cursor-ov-lst
+    ;;                                        edit-trailing-edges-p)
+    cursor-ov-lst))
+
 (defun mulled/lines/dispose (lines)
   ;; Dispose icons on fringe.
   (dolist (ov (mulled/lines/indicator-ov-lst-of lines))
+    (delete-overlay ov))
+  ;; Dispose cursors on each line.
+  (dolist (ov (mulled/lines/cursor-ov-lst-of lines))
     (delete-overlay ov))
   (mulled/lines/be-pair-lst/dispose (mulled/lines/be-pair-lst-of lines)))
 
@@ -935,6 +984,9 @@ Line break character will be counted as one column."
 
 (defun mulled/lines/indicator-ov-lst-of (lines)
   (nth 1 lines))
+
+(defun mulled/lines/cursor-ov-lst-of (lines)
+  (nth 2 lines))
 
 (defun mulled/lines/count-of (lines)
   "Total amount of lines targeted for multiple line edit."
@@ -1032,6 +1084,73 @@ accepted by each line of multiple line edit."
                                   (when (< col-num-cur-line col-required)
                                     (setq retval t)))))
     retval))
+
+(defun mulled/lines/update-cursor-ov-lst (lines edit-trailing-edges-p)
+  (mulled/lines/update-cursor-ov-lst-aux
+   lines
+   (mulled/lines/cursor-ov-lst-of lines)
+   edit-trailing-edges-p))
+
+(defun mulled/lines/update-cursor-ov-lst-aux (lines cursor-ov-lst edit-trailing-edges-p)
+  (let* ((tail-p           edit-trailing-edges-p)
+         (col-1st-line     (mulled/lines/col-from-pt-in-nth
+                            lines 0 (point)))
+         (col-num-1st-line (mulled/lines/col-num-nth lines 0))
+         (offset-1st-line  (cond
+                            (tail-p (- col-num-1st-line col-1st-line))
+                            (t      col-1st-line)))
+         (out-of-range-err (mulled/lines/out-of-range-op-p
+                            lines tail-p
+                            col-1st-line col-1st-line 0))
+         (face             (if out-of-range-err
+                               'mulled/out-of-range-cursor-face
+                             'mulled/cursor-face))
+         (pseudo-cursor    (let ((str (copy-sequence " ")))
+                             (put-text-property 0 1 'face face str)
+                             str)))
+    (mulled/lines/map
+     lines
+     (lambda (nth)
+       (let* ((ov      (nth nth cursor-ov-lst))
+              (col-num (mulled/lines/col-num-nth lines nth))
+              (col     (cond
+                        ;; COL must be in current line.
+                        (tail-p (max 0 (- col-num offset-1st-line)))
+                        (t      (min offset-1st-line col-num))))
+              (pt      (mulled/lines/pt-from-col-in-nth lines nth col)))
+         
+         ;; Make looking of the pseudo cursor good.
+         ;;
+         (let ((display       nil)
+               (after-str     nil))
+           (cond
+            ;; Trim "\t" into cursor and spaces.
+            ((eq (char-after pt) 09)
+             (let ((col-next-char (mulled/lines/col-from-pt-in-nth
+                                   lines nth (1+ pt))))
+               (setq display   pseudo-cursor)
+               (setq after-str (make-string (1- ;; = Exclude cursor width.
+                                             (- col-next-char col))
+                                            ?\ ))))
+            ;; Put cursor over "\n".
+            ((eq (char-after pt) 10)
+             (setq display   (concat pseudo-cursor))
+             (setq after-str "\n"))
+            
+            ;; Put cursor at EOF.
+            ((null (char-after pt))
+             (setq after-str (concat pseudo-cursor))))
+           
+           (overlay-put ov 'display      display)
+           (overlay-put ov 'after-string after-str))
+         
+         (move-overlay ov pt (1+ pt))
+         (overlay-put ov 'face face))))
+    
+    ;; Redisplay pseudo cursors.
+    (when (and (not mulled/.running-primitive-undo-p) ;; Inhibit flicker.
+               (not executing-kbd-macro))
+      (sit-for 0))))
 
 (defun mulled/lines/mirror-insert-op (lines edit-trailing-edges-p col-beg col-end)
   "Reflect input operation, which is occurred in 1st line, to another lines."
