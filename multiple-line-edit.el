@@ -107,6 +107,9 @@
 
 ;;; Change Log:
 
+;;   - Fixed a bug that the feature `reactivation by undo' does not
+;;     work if the deactivation was not triggered by keyboard quit.
+;;
 ;;  v1.10 Sat Dec  4 16:15:07 2010 JST
 ;;   - Fixed a bug that cursor position won't be set properly
 ;;     by `mulled/edit-leading-edges' and `mulled/edit-trailing-edges'
@@ -605,6 +608,8 @@ Line break character will be counted as one column."
          (lines (overlay-get ov 'mulled/lines)))
     (when (and mulled/reactivate-by-undo
                (listp buffer-undo-list))
+      (when (not (null (car buffer-undo-list)))
+        (push nil buffer-undo-list))
       (when mulled/.last-pt
         (push `(apply goto-char ,mulled/.last-pt) buffer-undo-list))
       (push (mulled/ov-1st-line/make-reactivate-form ov) buffer-undo-list))
