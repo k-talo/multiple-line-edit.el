@@ -66,42 +66,121 @@
 ;;            placed in `"Edit" > "Multiple Line Edit"'.
 ;;
 ;;   3. When multiple line edit is activated, the cursor will be
-;;      moved to the 1st line of the selected lines.
+;;      appeared on each selected lines.
 ;;
-;;      And then, your modification in the 1st line will be
-;;      reflected to another lines automatically.
+;;      And then, your modification will be applied to each lines
+;;      at a time.
 ;;
 ;;      NOTE: While multiple line edit is active, indicator icons
-;;            will be appear on the fringes.
+;;            will be appear on the fringes if you are running Emacs
+;;            on graphical environment like X Window System.
 ;;
 ;;           (The icon `>>' will be used for leading edges edit, and
 ;;            the icon `<<' will be used for trailing edges edit)
 ;;
-;;   4. To finish multiple line edit, type `C-g' or move cursor
-;;      to outside of the 1st line.
+;;      While you are in multiple line editing, you can toggle leading
+;;      edge edit and trailing edge edit by commands `mulled/edit-leading-edges'
+;;      and `mulled/edit-trailing-edges'.
+;;
+;;      Note that multiple edit will be exit when the color of cursor
+;;      on each line is red, it means cursor position is out of the
+;;      range on some lines.
+;;
+;;   4. To finish multiple line edit, type `C-g', or move cursor
+;;      to outside of the each line.
+;;
+;;   5. If you finished multiple line edit unexpectedly, you can
+;;      restore multiple line edit session by command `undo'.
+;;
+;;      This behavior is customized via user option
+;;      `mulled/reactivate-by-undo'.
 ;;
 ;; Also check out the customization group
 ;;
 ;;   `M-x customize-group RET multiple-line-edit RET'
 ;;
 ;;
+;; COMMANDS
+;; ========
+;;  `M-x mulled/edit-trailing-edges RET'
+;;
+;;      Start editing on trailing edge of multiple line.
+;;      
+;;      You have to select lines, that you want to edit at a time,
+;;      before you run this command.
+;;      
+;;      When called with prefix argument, cursor remains at current
+;;      position.
+;;      
+;;      Otherwise, cursor will be moved to beginning of the lines.
+;;      
+;;      You can abort multiple lines edit by typing "C-g"
+;;      or move cursor to outside of each line.
+;;
+;;  `M-x mulled/edit-leading-edges RET'
+;;
+;;      Start editing on leading edge of multiple line.
+;;      
+;;      You have to select lines, that you want to edit at a time,
+;;      before you run this command.
+;;      
+;;      When called with prefix argument, cursor remains at current
+;;      position.
+;;      
+;;      Otherwise, cursor will be moved to end of the lines.
+;;      
+;;      You can abort multiple lines edit by typing "C-g"
+;;      or move cursor to outside of each line.
+;;
+;;  `M-x mulled/switch-direction RET'
+;;
+;;      Switch Leading Edges Edit and Trailing Edges Edit.
+;;            
+;;      When called with prefix argument, cursor won't be moved to
+;;      each edges.
+;;            
+;;      Otherwise, cursor will be moved to either edge.
+;;      
+;;      You can also switch editing direction by commands
+;;      `mulled/edit-leading-edges' and `mulled/edit-trailing-edges'.
+;;
+;;  `C-g'
+;;  `M-x mulled/abort RET'
+;;
+;;      Exit from multiple line edit.
+;;      You can restore multiple line edit session, which aborted
+;;      by this command, with the command `undo'.
+;;
+;;  `M-x mulled/force-abort RET'
+;;      Force abort multiple line edit.
+;;      Try this command when multiple line edit is broken
+;;      by errors.
+;;
+;;
 ;; Key map Examples
 ;; ================
-;; (global-set-key [(control c) (<)] 'mulled/edit-trailing-edges)
-;; (global-set-key [(control c) (>)] 'mulled/edit-leading-edges)
+;; This library does not assign keys by default.
+;; Put lines below to your .emacs start up file then
+;; customize them as you like.
+;;
+;;   (global-set-key "\C-c<" 'mulled/edit-trailing-edges)
+;;   (global-set-key "\C-c>" 'mulled/edit-leading-edges)
 ;;
 ;;
 ;; KNOWN PROBLEMS
 ;; ==============
-;; Multiple line edit won't work with commands that sets
-;; non-nil value to the variable `inhibit-modification-hooks'
-;; like `YASnippet'.
+;; - Codes aside, this document should be rewritten.
+;;   My English sucks :-(
 ;;
-;; We wrote experimental patches to run `YASnippet' with
-;; `multiple-line-edit', put a line below in your .emacs startup
-;; file if you are interested in.
-;;
-;;    (mulled/experimental/install-yas-support)
+;; - Multiple line edit won't work with commands that sets
+;;   non-nil value to the variable `inhibit-modification-hooks'
+;;   like `YASnippet'.
+;;  
+;;   We wrote experimental patches to run `YASnippet' with
+;;   `multiple-line-edit', put a line below in your .emacs startup
+;;   file if you are interested in.
+;;  
+;;      (mulled/experimental/install-yas-support)
 ;;
 
 
@@ -196,7 +275,7 @@
   :group 'editing)
 
 (defcustom mulled/reactivate-by-undo t
-  "Non-nil means reactivate multiple line edit after undo/redo."
+  "Non-nil means reactivate multiple line edit by undo/redo."
   :type 'boolean
   :group 'multiple-line-edit)
 
@@ -213,7 +292,7 @@
   '((((class color)) :foreground "white" :background "Red1")
     (t :inverse-video t :weight bold))
   "Face used for cursor of multiple line edit when
-cursor is out of range in some line."
+when either cursor is outside of each line."
   :group 'multiple-line-edit)
 
 (defface mulled/fringe-face
@@ -258,14 +337,18 @@ a function applied at 1st line.
 ;; Commands
 ;;
 (defun mulled/edit-trailing-edges (&optional keep-offset)
-  "Edit trailing edge of multiple line.
+  "Start editing on trailing edge of multiple line.
 
-When called with prefix argument, cursor will moved
-to 1st line of current region with keeping offset
-from end of current line to current point.
+You have to select lines, that you want to edit at a time,
+before you run this command.
 
-Otherwise, cursor will be moved to end of
-the 1st line."
+When called with prefix argument, cursor remains at current
+position.
+
+Otherwise, cursor will be moved to beginning of the lines.
+
+You can abort multiple lines edit by typing \"C-g\"
+or move cursor to outside of each line."
   (interactive "P")
   (cond
    ((mulled/is-leading-edges-edit-in-progress )
@@ -278,14 +361,18 @@ the 1st line."
     (message "[mulled] Select multiple line first."))))
 
 (defun mulled/edit-leading-edges (&optional keep-offset)
-  "Edit leading edge of multiple line.
+  "Start editing on leading edge of multiple line.
 
-When called with prefix argument, cursor will moved
-to 1st line of current region with keeping offset
-from beginning of current line to current point.
+You have to select lines, that you want to edit at a time,
+before you run this command.
 
-Otherwise, cursor will be moved to beginning of
-the 1st line."
+When called with prefix argument, cursor remains at current
+position.
+
+Otherwise, cursor will be moved to end of the lines.
+
+You can abort multiple lines edit by typing \"C-g\"
+or move cursor to outside of each line."
   (interactive "P")
   (cond
    ((mulled/is-trailing-edges-edit-in-progress)
@@ -299,12 +386,14 @@ the 1st line."
 
 (defun mulled/switch-direction (&optional keep-offset)
   "Switch Leading Edges Edit and Trailing Edges Edit.
+      
+When called with prefix argument, cursor won't be moved to
+each edges.
+      
+Otherwise, cursor will be moved to either edge.
 
-When called with prefix argument, cursor won't be moved.
-
-Otherwise, cursor will be moved to beginning of line
-when switched to Leading Edges Edit, or moved to end
-of line when switched to Trailing Edges Edit."
+You can also switch editing direction by commands
+`mulled/edit-leading-edges' and `mulled/edit-trailing-edges'."
   (interactive "P")
   (let ((ov (mulled/ov-1st-line/find-at (point))))
     (if ov
@@ -312,7 +401,9 @@ of line when switched to Trailing Edges Edit."
       (message "[mulled] Multiple line edit is not in progress."))))
 
 (defun mulled/abort ()
-  "Exit from multiple line edit."
+  "Exit from multiple line edit.
+You can restore multiple line edit session, which aborted
+by this command, with the command `undo'."
   (interactive)
   (let ((ov (mulled/ov-1st-line/find-at (point))))
     (if ov
@@ -321,7 +412,9 @@ of line when switched to Trailing Edges Edit."
       (mulled/force-abort))))
 
 (defun mulled/force-abort ()
-  "Force exit from multiple line edit."
+  "Force abort multiple line edit.
+Try this command when multiple line edit is broken
+by errors."
   (interactive)
   (save-restriction
     (widen)
