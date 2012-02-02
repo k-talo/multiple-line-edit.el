@@ -8,7 +8,7 @@
 ;; Revision: $Id$
 ;; URL: http://www.emacswiki.org/emacs/download/multiple-line-edit.el
 ;; GitHub: http://github.com/k-talo/multiple-line-edit.el
-;; Version: 2.0.0
+;; Version: 2.0.1
 
 ;; This file is not part of GNU Emacs.
 
@@ -187,6 +187,10 @@
 
 ;;; Change Log:
 
+;;  v2.0.1 Thu Feb  2 17:42:19 2012 JST
+;;   - Fixed an error "Wrong type argument: markerp, nil" after
+;;     out of range operations.
+;;
 ;;  v2.0.0 Mon Dec 27 03:06:00 2010 JST
 ;;   - Changed version numbering rule from x.y to x.y.z.
 ;;   - Display pseudo cursors on each multiple edit lines.
@@ -251,7 +255,7 @@
 
 (provide 'multiple-line-edit)
 
-(defconst multiple-line-edit/version "2.0.0")
+(defconst multiple-line-edit/version "2.0.1")
 
 (eval-when-compile
   (require 'cl)
@@ -925,7 +929,9 @@ Line break character will be counted as one column."
                                                      col-end
                                                      col-num-removed)))))))
             (setq mulled/ov-1st-line/.str-to-be-modified "")
-            (mulled/ov-1st-line/update-cursor-pos ov)))))))
+            
+            (when (mulled/ov-1st-line/ov-1st-line-p ov) ;; Overlay is not disposed.
+              (mulled/ov-1st-line/update-cursor-pos ov))))))))
 
 ;; To prevent duplication of edit, in the lines next to 1st line,
 ;; which caused by undo/redo operation, we have to aware if the hook
