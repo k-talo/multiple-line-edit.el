@@ -8,6 +8,7 @@
 ;; Revision: $Id$
 ;; URL: http://www.emacswiki.org/emacs/download/multiple-line-edit.el
 ;; GitHub: http://github.com/k-talo/multiple-line-edit.el
+;; Version: 2.0.0
 
 ;; This file is not part of GNU Emacs.
 
@@ -250,7 +251,7 @@
 
 (provide 'multiple-line-edit)
 
-(defconst multiple-line-edit/version "1.6")
+(defconst multiple-line-edit/version "2.0.0")
 
 (eval-when-compile
   (require 'cl)
