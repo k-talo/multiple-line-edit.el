@@ -1,6 +1,6 @@
 ;;; multiple-line-edit.el --- Edit multiple line at a time.
 
-;; Copyright (C) 2010 K-talo Miyazaki, all rights reserved.
+;; Copyright (C) 2010, 2012 K-talo Miyazaki, all rights reserved.
 
 ;; Author: K-talo Miyazaki <Keitaro dot Miyazaki at gmail dot com>
 ;; Created: 10 Oct 2010 PM 02:44 JST
