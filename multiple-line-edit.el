@@ -326,7 +326,7 @@ Default value is `t'.
     (upcase-region . (lambda (beg end &rest orig-args)
                            (upcase-region beg end))))
   "Alist name of special functions and callback function which have to
-be applied to each line directory instead of mirroring the result of
+be applied to each line directly instead of mirroring the result of
 a function applied at 1st line.
 
 *THIS FEATURE IS EXPERIMENTAL AND MAY BE REMOVED IN THE FUTURE*"
