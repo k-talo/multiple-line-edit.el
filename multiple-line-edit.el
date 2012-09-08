@@ -570,6 +570,12 @@ Line break character will be counted as one column."
 (defvar mulled/ov-1st-line/keymap (make-sparse-keymap)
   "The keymap active while a multiple line edit is in progress.")
 (define-key mulled/ov-1st-line/keymap [?\C-g] 'mulled/abort)
+(define-key mulled/ov-1st-line/keymap (kbd "<up>")     'mulled/grow-top)
+(define-key mulled/ov-1st-line/keymap (kbd "<down>")   'mulled/shrink-top)
+(define-key mulled/ov-1st-line/keymap (kbd "C-<up>")   'mulled/shrink-bottom)
+(define-key mulled/ov-1st-line/keymap (kbd "C-<down>") 'mulled/grow-bottom)
+(define-key mulled/ov-1st-line/keymap (kbd "M-<up>")   'mulled/translate-up)
+(define-key mulled/ov-1st-line/keymap (kbd "M-<down>") 'mulled/translate-down)
 
 
 ;; Some class methods for convenience.
@@ -1372,6 +1378,114 @@ accepted by each line of multiple line edit."
             (cons (marker-position (car pair))
                   (marker-position (cdr pair))))
           be-pair-lst))
+
+
+;;; ===========================================================================
+;;;
+;;; Adjust vertical ends
+;;;
+;;; ===========================================================================
+
+(defun mulled/adjust-ends (arg &optional lower)
+  "Adjust the vertical ends of the current mulled session.
+
+With positive numeric prefix ARG, extend ARG lines. With negative
+numeric prefix ARG, contract ARG lines.
+
+If optional LOWER is non-nil, operate on the lower end.
+Otherwise, operate on the upper end."
+  (interactive "P")
+  (when (or (mulled/is-trailing-edges-edit-in-progress)
+            (mulled/is-leading-edges-edit-in-progress))
+    (let* ((cursors (car (last (overlay-get (mulled/ov-1st-line/find-at (point)) 'mulled/lines))))
+           (trailing (mulled/is-trailing-edges-edit-in-progress))
+           (target-column (if trailing (- (line-end-position) (point)) (current-column)))
+           (top (overlay-start (car cursors)))
+           (bot (save-excursion
+                  ;; special case for column 0
+                  (goto-char (overlay-start (car (last cursors))))
+                  (when (= target-column 0) (forward-line 1))
+                  (point)))
+           (counter (prefix-numeric-value arg))
+           (movable-bound  (if lower bot top))
+           (anchored-bound (if lower top bot))
+           (new-bound (save-excursion
+                        (goto-char movable-bound)
+                        (when (or (> counter 0)
+                                  (> (length cursors) (1+ (abs counter))))
+                          (forward-line (* counter (if lower 1 -1)))
+                          (if trailing
+                              (when (>= (- (line-end-position) target-column) (line-beginning-position))
+                                (- (line-end-position) target-column))
+                            ;; else
+                            (move-to-column target-column)
+                            (when (and (= (current-column) target-column)
+                                       (not (= movable-bound (point))))
+                              (point)))))))
+      (unless new-bound
+        (error (format "Can't %s any farther"
+                       (cond
+                         ((memq this-command '(mulled/translate-up mulled/translate-down))
+                          "move")
+                         ((> counter 0)
+                          "grow")
+                         (t
+                          "shrink")))))
+      (flet ((message (&rest args) t))
+        (mulled/abort))
+      (goto-char anchored-bound)
+      (push-mark new-bound t t)
+      (if trailing
+          (mulled/edit-trailing-edges t)
+        (mulled/edit-leading-edges t)))))
+
+(defalias 'mulled/grow-top 'mulled/adjust-ends)
+
+(defun mulled/grow-bottom (arg)
+  "Extend the lower vertical limit of the current mulled session.
+
+With positive numeric prefix ARG, extend ARG lines. With negative
+numeric prefix ARG, contract ARG lines."
+  (interactive "P")
+  (mulled/adjust-ends arg 'lower))
+
+(defun mulled/shrink-top (arg)
+  "Contract the upper vertical limit of the current mulled session.
+
+With positive numeric prefix ARG, contract by ARG lines."
+  (interactive "P")
+  (mulled/adjust-ends (- (abs (prefix-numeric-value arg)))))
+
+(defun mulled/shrink-bottom (arg)
+  "Contract the lower vertical limit of the current mulled session.
+
+With positive numeric prefix ARG, contract by ARG lines."
+  (interactive "P")
+  (mulled/adjust-ends (- (abs (prefix-numeric-value arg))) 'lower))
+
+(defun mulled/translate-up (arg)
+  "Move the current mulled session upward.
+
+With positive numeric prefix ARG, move ARG lines upward.  With
+negative numeric prefix ARG, move ARG lines downward."
+  (interactive "P")
+  (if (< (prefix-numeric-value arg) 0)
+      (mulled/translate-down (abs (prefix-numeric-value arg)))
+    ;; else
+    (mulled/adjust-ends (prefix-numeric-value arg))
+    (mulled/adjust-ends (- (prefix-numeric-value arg)) 'lower)))
+
+(defun mulled/translate-down (arg)
+  "Move the current mulled session downward.
+
+With positive numeric prefix ARG, move ARG lines downward. With
+negative numeric prefix ARG, move ARG lines upward."
+  (interactive "P")
+  (if (< (prefix-numeric-value arg) 0)
+      (mulled/translate-up (abs (prefix-numeric-value arg)))
+    ;;else
+    (mulled/adjust-ends (prefix-numeric-value arg) 'lower)
+    (mulled/adjust-ends (- (prefix-numeric-value arg)))))
 
 
 ;;; ===========================================================================
